@@ -246,3 +246,4 @@ Incomplete or unverified:
 Hardening and scaling (two stores to 100): authentication, rate limiting, an Odoo-side unique reference (custom module in `odoo-module/`), a reconciliation job with drift alerts, a dead-letter review screen, incremental sync, read replicas or caching for the dashboard, partitioning of `stock_movements` and `integration_events`, and a message broker if polling becomes a bottleneck. Contention is already limited to a single (variant, location) row, so the sale path scales with the number of stores.
 # verve
 # verve
+# verve
