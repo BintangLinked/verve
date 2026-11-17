@@ -2,7 +2,7 @@
 
 Full Stack Engineering Case Study: a small inventory application with a Next.js dashboard, a FastAPI backend, PostgreSQL, and an Odoo integration (mock now, live later).
 
-Detailed rationale is in `docs/design.md`. The implementation plan is in `docs/superpowers/plans/2026-11-13-verve-inventory.md`. Example requests with real output are in `docs/api-examples.md`.
+Detailed rationale is in `docs/design.md`. Example requests with real output are in `docs/api-examples.md`.
 
 ## 1. Architecture and system of record
 
@@ -31,7 +31,7 @@ Odoo is the authoritative inventory system. The local PostgreSQL stock table is 
 | `sales`, `replenishment_requests`, `stock_movements`, `integration_events` | Application | Sales and transfers are pushed to Odoo as documents |
 | Schema `mock_odoo` | Mock only | Stands in for Odoo's own database; accessed only by `MockOdooClient` |
 
-The backend never reads or writes Odoo's database directly, and Odoo credentials exist only in backend environment variables.
+The backend never reads or writes Odoo's database directly, and Odoo credentials exist only on the backend (stored encrypted, entered on the Odoo configuration page).
 
 ## 2. Prerequisites
 
@@ -97,9 +97,28 @@ Optional: copy `.env.example` to `.env.local` if the backend is not on `http://l
 
 ## 4. Running
 
+### 4.1 With `dev.sh` (recommended)
 
-One terminal instead of three: from the project root run `./dev.sh start`, `./dev.sh restart` (after changing `backend/.env`), `./dev.sh stop`, `./dev.sh status` or `./dev.sh logs`. It starts the API (8000), the worker and the dashboard (3000), keeps logs in `.run/`, and only stops processes it started itself. The three manual commands below do the same.
-Three terminals:
+`dev.sh` in the project root starts the API (port 8000), the outbox worker and the dashboard (port 3000) from one terminal. Run it after sections 3.1 to 3.3 are complete.
+
+```bash
+./dev.sh start      # start all three in the background, then wait for /health
+./dev.sh status     # show which services are running and whether the ports are in use
+./dev.sh logs       # follow all three logs (Ctrl+C leaves the services running)
+./dev.sh restart    # stop, then start (required after changing backend/.env)
+./dev.sh stop       # stop all three
+```
+
+| Aspect | Behaviour |
+|--------|-----------|
+| Dashboard | `http://localhost:3000` (the frontend needs a few seconds after `start`) |
+| Logs and PIDs | `.run/api.log`, `.run/worker.log`, `.run/web.log` and `.run/*.pid` |
+| Safety | Only processes that `dev.sh` started itself are stopped. If port 8000 or 3000 is already used, or an `app.worker` process already exists (for example from a manual terminal), that service is not started and the script reports why |
+| Environment | Run it from a shell where `backend/.venv` and `frontend/node_modules` exist (sections 3.2 and 3.3). It needs bash and `ss`, so on Windows run it inside WSL (not PowerShell or Git Bash) |
+
+### 4.2 Manual (three terminals)
+
+The same three processes without the script:
 
 ```bash
 # 1. API (seeds the local tables from Odoo on first start when they are empty)
@@ -123,7 +142,7 @@ cd backend && .venv/bin/alembic downgrade base && .venv/bin/alembic upgrade head
 ## 5. Tests
 
 ```bash
-cd backend && .venv/bin/pytest -v          # 196 tests, uses real PostgreSQL (database_verve_test)
+cd backend && .venv/bin/pytest -v          # 233 tests, uses real PostgreSQL (database_verve_test)
 cd frontend && npm run lint && npm run build
 ```
 
@@ -200,7 +219,7 @@ One dedicated Odoo service account is configured on the backend: URL, database n
 
 | Aspect | Behaviour |
 |--------|-----------|
-| Validation | `common.version` then `authenticate` against the configured database. `db.list` is never used because administrators can disable it |
+| Validation | `/web/webclient/version_info` then `res.users/context_get` (JSON-2) against the configured database. `db.list` is never used because administrators can disable it |
 | Status | `GET /api/odoo/connection` returns mode, status, database, Odoo version, last checked time and a sanitised error. It returns the last stored result and does not call Odoo; only start-up and `POST /api/odoo/connection/test` run a check |
 | Error codes | `NOT_CONFIGURED`, `URL_NOT_ALLOWED`, `UNREACHABLE`, `TIMEOUT`, `DATABASE_NOT_FOUND`, `AUTH_FAILED`, `UNKNOWN`. Each has a fixed message; raw Odoo text is never returned |
 | Start-up | Odoo downtime, a wrong key or missing settings never stop the API. The check and the first data load run in a background thread, so the first inventory request after a cold start can briefly be empty |
@@ -235,7 +254,7 @@ Incomplete or unverified:
 
 | Item | State |
 |------|-------|
-| Live Odoo client | Verified once against a local Odoo 19.0 Enterprise instance: connection, stock read, one sale posted as a done picking, idempotent replay and re-sync (design 8.3a; three Odoo 19 differences were fixed). Not yet exercised live: replenishment transfers. The detection of a missing database relies on a PostgreSQL-style error message and is unverified. It uses the legacy `/jsonrpc` endpoint, which Odoo 19 deprecates (removal scheduled for Odoo 22); migrating to the JSON-2 API is a hardening item. Other field mapping marked `[ASUMSI]` in `backend/app/odoo/live.py` should be re-checked on other Odoo versions |
+| Live Odoo client | Verified once against a local Odoo 19.0 Enterprise instance: connection, stock read, one sale posted as a done picking, idempotent replay and re-sync (design 8.3a; three Odoo 19 differences were fixed). Not yet exercised live: replenishment transfers. The detection of a missing database relies on a PostgreSQL-style error message and is unverified. It uses the JSON-2 API (`/json/2/<model>/<method>`); the client was verified read-only against a real Odoo after the migration. Other field mapping marked `[Assumption]` in `backend/app/odoo/live.py` should be re-checked on other Odoo versions |
 | Dashboard behaviour in a browser | Driven in Chromium (login gate, three menus, Odoo configuration, user page, session expiry, phone width). Edge, Firefox and Safari were not tested |
 | Authentication and authorisation | The Odoo connection and integration-events endpoints require the administrator login. Every endpoint except `/health` and login requires the single administrator session; there are no per-store roles or multiple users. The Odoo API key can be saved from the UI (write-only, encrypted); a server-side secret store is still the recommended production setup. The login throttle and the session revocation list live in process memory (a restart forgets revoked sessions, and several instances need a shared store); the throttle uses the direct client address and ignores `X-Forwarded-For`, so behind a reverse proxy all clients share one address and an attacker could lock the administrator out. Cross-site request forgery relies on `SameSite=Lax`; an `Origin` check on state-changing requests is a hardening item |
 | Damaged return endpoint | Service function and tests exist; no public endpoint |
@@ -244,6 +263,3 @@ Incomplete or unverified:
 | FAILED sale | Local stock stays deducted: the sync subtracts PENDING, PROCESSING and FAILED sales, so a unit whose delivery to Odoo failed cannot be sold a second time. The operator can retry the event; there is no cancel endpoint to release the stock yet |
 
 Hardening and scaling (two stores to 100): authentication, rate limiting, an Odoo-side unique reference (custom module in `odoo-module/`), a reconciliation job with drift alerts, a dead-letter review screen, incremental sync, read replicas or caching for the dashboard, partitioning of `stock_movements` and `integration_events`, and a message broker if polling becomes a bottleneck. Contention is already limited to a single (variant, location) row, so the sale path scales with the number of stores.
-# verve
-# verve
-# verve

@@ -1,0 +1,29 @@
+# Secrets and local configuration (the *.example files ARE committed)
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# Node / Next.js
+node_modules/
+.next/
+*.tsbuildinfo
+
+# dev.sh runtime files (PIDs and logs)
+.run/
+
+# Tooling and editor state
+.idea/
+.superpowers/
+
+# Local-only docs (only docs/design.md and docs/api-examples.md are published)
+docs/interview-cheatsheet.md
+docs/superpowers/
+
+# Case study brief from the assessor (not published)
+Verve_Retail_Full_Stack_Case_Study.docx
